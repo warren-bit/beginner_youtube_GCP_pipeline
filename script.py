@@ -1,17 +1,17 @@
 import os
-from dotenv import load_dotenv
 import json
 import requests
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 from google.cloud import storage
 from google.cloud.sql.connector import Connector, IPTypes
 import sqlalchemy
 from sqlalchemy import text
 
-# Load .env file
+# Load environment variables from .env file
 load_dotenv()
 
-# Required env variables
+# Required environment variables
 API_KEY = os.getenv('YOUTUBE_API_KEY')
 PROJECT_ID = os.getenv('PROJECT_ID')
 REGION = os.getenv('REGION')
@@ -21,7 +21,7 @@ DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 BUCKET_NAME = os.getenv('BUCKET_NAME', 'first-pipeline-raw-data')
 
-# Basic validation
+# Validate required environment variables
 missing = []
 for name, value in [
     ('YOUTUBE_API_KEY', API_KEY),
@@ -45,6 +45,16 @@ CHANNEL_ID = "UCWf7prs03RhgFfC5Aind0Ww"  # AFTV Xtra
 
 
 def get_channel_stats(channel_id=CHANNEL_ID):
+    """
+    Fetch YouTube channel statistics and metadata from the YouTube Data API.
+
+    Args:
+        channel_id (str): YouTube channel ID.
+
+    Returns:
+        dict | None: A dictionary containing channel statistics and metadata,
+                     or None if the API request fails or no data is found.
+    """
     params = {
         'part': 'statistics,snippet',
         'id': channel_id,
@@ -80,12 +90,25 @@ def get_channel_stats(channel_id=CHANNEL_ID):
 
 
 def upload_to_gcs(bucket_name, data, file_name):
+    """
+    Upload raw JSON data to Google Cloud Storage.
+
+    Args:
+        bucket_name (str): Name of the GCS bucket.
+        data (dict): Data to upload.
+        file_name (str): Name of the destination file in GCS.
+
+    Returns:
+        bool: True if upload succeeds, False otherwise.
+    """
     try:
         client = storage.Client()
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(file_name)
+
         json_data = json.dumps(data, indent=4)
         blob.upload_from_string(json_data, content_type='application/json')
+
         print(f"File {file_name} uploaded to bucket {bucket_name} successfully.")
         return True
     except Exception as e:
@@ -94,8 +117,15 @@ def upload_to_gcs(bucket_name, data, file_name):
 
 
 def get_sqlalchemy_engine():
+    """
+    Create a SQLAlchemy engine for connecting to a Cloud SQL PostgreSQL instance
+    using the Cloud SQL Python Connector.
+
+    Returns:
+        sqlalchemy.Engine | None: SQLAlchemy engine if successful, otherwise None.
+    """
     try:
-        connector = Connector(ip_type=IPTypes.PUBLIC)  # change to PRIVATE if needed
+        connector = Connector(ip_type=IPTypes.PUBLIC)  # Use PRIVATE if required
 
         def getconn():
             return connector.connect(
@@ -111,12 +141,22 @@ def get_sqlalchemy_engine():
             creator=getconn,
         )
         return engine
+
     except Exception as e:
         print(f"Error creating SQLAlchemy engine: {e}")
         return None
 
 
 def load_to_postgres(stats):
+    """
+    Load structured YouTube channel statistics into PostgreSQL.
+
+    Args:
+        stats (dict): Channel statistics data.
+
+    Returns:
+        bool: True if data insertion succeeds, False otherwise.
+    """
     if not stats:
         print("No data to load into Postgres")
         return False
@@ -140,7 +180,7 @@ def load_to_postgres(stats):
                     :hidden_subscribers, :raw_data
                 )
             """)
-            
+
             conn.execute(
                 query,
                 {
@@ -165,6 +205,12 @@ def load_to_postgres(stats):
 
 
 if __name__ == "__main__":
+    """
+    Main execution block for running the pipeline end-to-end:
+    1. Extract YouTube channel statistics
+    2. Upload raw data to GCS
+    3. Load structured data into PostgreSQL
+    """
     stats = get_channel_stats()
 
     if not stats:
@@ -173,12 +219,12 @@ if __name__ == "__main__":
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         file_name = f"youtube_stats_{CHANNEL_ID}_{timestamp}.json"
 
-        # 1. Upload to GCS (raw data lake)
+        # 1. Upload raw data to GCS (data lake)
         gcs_success = upload_to_gcs(BUCKET_NAME, stats, file_name)
 
-        # 2. Load to PostgreSQL (warehouse)
+        # 2. Load structured data to PostgreSQL (warehouse)
         pg_success = load_to_postgres(stats)
 
         print("\nPipeline summary:")
-        print(f"  GCS upload:  {'SUCCESS' if gcs_success else 'FAILED'}")
-        print(f"  Postgres insert: {'SUCCESS' if pg_success else 'FAILED'}")
+        print(f"  GCS upload:       {'SUCCESS' if gcs_success else 'FAILED'}")
+        print(f"  Postgres insert:  {'SUCCESS' if pg_success else 'FAILED'}")
