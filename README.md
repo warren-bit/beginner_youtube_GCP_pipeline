@@ -162,14 +162,3 @@ The script will:
 * Data visualization dashboards
 
 ---
-
-## 👤 Author
-
-**Warren Odiwuor Otieno**
-Aspiring Data Engineer | Cloud & Analytics Enthusiast
-
----
-
-## 📄 License
-
-This project is for educational and portfolio purposes.
